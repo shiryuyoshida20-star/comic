@@ -165,6 +165,13 @@
   .empty-state h3{margin:0 0 6px; font-size:15px;}
   .empty-state p{font-size:12.5px; margin:0;}
 
+  .hidden-spinoff-row{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    padding:9px 12px; opacity:.7;
+  }
+  .hidden-spinoff-info{display:flex; align-items:center; gap:8px; min-width:0;}
+  .hidden-title{font-size:12.5px; color:var(--ink-soft); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+
   /* ---------- FAB ---------- */
   .fab{
     position:fixed; right:18px; bottom:24px; width:54px; height:54px; border-radius:50%;
@@ -333,6 +340,13 @@
   <div class="field hidden" id="parentSeriesWrap">
     <label>親シリーズ名</label>
     <input type="text" id="f_parent" placeholder="本編のシリーズ名">
+  </div>
+  <div class="toggle-field hidden" id="spinoffVisibleWrap">
+    <div>
+      <div class="tlabel">一覧に表示する</div>
+      <div class="tdesc">OFFにすると一覧では「非表示中」の小さな行になり、いつでも戻せます</div>
+    </div>
+    <span class="switch on" id="spinoffVisibleFieldSwitch"></span>
   </div>
 
   <div class="toggle-field">
@@ -691,6 +705,9 @@ function render() {
 }
 
 function renderCard(it) {
+  if (it.isSpinoff && it.spinoffVisible === false) {
+    return renderHiddenSpinoffRow(it);
+  }
   const today = todayStr();
   const isUpcoming = it.releaseDate >= today;
   return `
@@ -714,9 +731,22 @@ function renderCard(it) {
           <div class="purchase-toggle ${it.purchased ? 'checked' : ''}" data-action="togglePurchased" data-id="${it.id}">
             <span class="box">${it.purchased ? '✓' : ''}</span> 購入済み
           </div>
+          ${it.isSpinoff ? `<button class="icon-btn" data-action="hideSpinoff" data-id="${it.id}">このスピンオフを非表示</button>` : ''}
           <button class="icon-btn" data-action="edit" data-id="${it.id}">編集</button>
         </div>
       </div>
+    </div>
+  `;
+}
+
+function renderHiddenSpinoffRow(it) {
+  return `
+    <div class="card hidden-spinoff-row" data-id="${it.id}">
+      <div class="hidden-spinoff-info">
+        <span class="badge badge-spinoff">スピンオフ・非表示中</span>
+        <span class="hidden-title">${escapeHtml(it.title)}${it.volume ? ` 第${escapeHtml(it.volume)}巻` : ''}</span>
+      </div>
+      <button class="icon-btn" data-action="showSpinoff" data-id="${it.id}">表示する</button>
     </div>
   `;
 }
@@ -730,6 +760,15 @@ document.getElementById('listContainer').addEventListener('click', async (e) => 
   if (action === 'togglePurchased') {
     const item = allItems[id];
     item.purchased = !item.purchased;
+    await saveItemToDb(id, item);
+  } else if (action === 'hideSpinoff') {
+    const item = allItems[id];
+    item.spinoffVisible = false;
+    await saveItemToDb(id, item);
+    toast("このスピンオフを非表示にしました");
+  } else if (action === 'showSpinoff') {
+    const item = allItems[id];
+    item.spinoffVisible = true;
     await saveItemToDb(id, item);
   } else if (action === 'edit') {
     openPanel(id);
@@ -778,7 +817,9 @@ function openPanel(id) {
   setSwitch('spinoffFieldSwitch', it ? !!it.isSpinoff : false);
   setSwitch('purchasedFieldSwitch', it ? !!it.purchased : false);
   setSwitch('calFieldSwitch', it ? !!it.syncCalendar : false);
+  setSwitch('spinoffVisibleFieldSwitch', it ? it.spinoffVisible !== false : true);
   document.getElementById('parentSeriesWrap').classList.toggle('hidden', !(it && it.isSpinoff));
+  document.getElementById('spinoffVisibleWrap').classList.toggle('hidden', !(it && it.isSpinoff));
   updateCalFieldDesc();
 
   document.getElementById('deleteBtn').classList.toggle('hidden', !id);
@@ -805,6 +846,10 @@ document.getElementById('spinoffFieldSwitch').addEventListener('click', e => {
   const on = !e.target.classList.contains('on');
   setSwitch('spinoffFieldSwitch', on);
   document.getElementById('parentSeriesWrap').classList.toggle('hidden', !on);
+  document.getElementById('spinoffVisibleWrap').classList.toggle('hidden', !on);
+});
+document.getElementById('spinoffVisibleFieldSwitch').addEventListener('click', e => {
+  setSwitch('spinoffVisibleFieldSwitch', !e.target.classList.contains('on'));
 });
 document.getElementById('purchasedFieldSwitch').addEventListener('click', e => {
   setSwitch('purchasedFieldSwitch', !e.target.classList.contains('on'));
@@ -844,6 +889,7 @@ document.getElementById('saveBtn').addEventListener('click', async () => {
     isbn: document.getElementById('f_isbn').value.replace(/[^0-9Xx]/g, ''),
     isSpinoff: isOn('spinoffFieldSwitch'),
     parentSeries: isOn('spinoffFieldSwitch') ? document.getElementById('f_parent').value.trim() : '',
+    spinoffVisible: isOn('spinoffFieldSwitch') ? isOn('spinoffVisibleFieldSwitch') : true,
     purchased: isOn('purchasedFieldSwitch'),
     syncCalendar: isOn('calFieldSwitch'),
     note: document.getElementById('f_note').value.trim(),
