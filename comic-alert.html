@@ -234,6 +234,54 @@
     margin:16px 12px; padding:14px 16px; background:#fdecea; border:1px solid #f1c2bb;
     border-radius:10px; font-size:12.5px; color:#7a2a20; line-height:1.6;
   }
+
+  /* ---------- Series link ---------- */
+  .series-link{
+    cursor:pointer; color:var(--indigo); text-decoration:underline dotted;
+    font-size:11.5px; font-weight:600;
+  }
+  .series-link:hover{color:var(--indigo-light);}
+
+  /* ---------- Amazon button ---------- */
+  .amazon-btn{
+    display:inline-flex; align-items:center; gap:4px;
+    background:#FF9900; color:#fff; border:none; border-radius:6px;
+    font-size:11px; font-weight:700; padding:4px 8px; cursor:pointer;
+    text-decoration:none; white-space:nowrap;
+  }
+  .amazon-btn:hover{opacity:.88;}
+
+  /* ---------- Series detail panel ---------- */
+  .series-panel{
+    position:fixed; left:0; right:0; bottom:0; max-height:92vh; overflow-y:auto;
+    background:var(--paper); border-radius:18px 18px 0 0; z-index:70;
+    transform:translateY(100%); transition:transform .22s ease;
+    padding:18px 16px calc(24px + env(safe-area-inset-bottom));
+    box-shadow:0 -4px 20px rgba(0,0,0,.2);
+  }
+  .series-panel.open{transform:translateY(0);}
+  .series-panel-handle{width:38px; height:4px; background:var(--line); border-radius:99px; margin:0 auto 14px;}
+  .series-panel-header{display:flex; align-items:baseline; justify-content:space-between; margin-bottom:14px; gap:10px;}
+  .series-panel-header h2{font-size:16px; margin:0;}
+  .series-stats{display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px;}
+  .stat-chip{
+    background:var(--paper-card); border:1px solid var(--line); border-radius:8px;
+    padding:6px 12px; font-size:12px; color:var(--ink-soft);
+  }
+  .stat-chip strong{color:var(--ink); font-weight:700;}
+  .series-vol-list{display:flex; flex-direction:column; gap:8px;}
+  .series-vol-row{
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+    background:var(--paper-card); border-radius:8px; padding:10px 12px;
+    border:1px solid var(--line);
+  }
+  .series-vol-info{flex:1; min-width:0;}
+  .series-vol-title{font-size:13px; font-weight:600; margin:0 0 2px;}
+  .series-vol-meta{font-size:11px; color:var(--ink-soft);}
+  .series-vol-actions{display:flex; align-items:center; gap:6px; flex:none;}
+  .series-close-btn{
+    background:none; border:none; font-size:20px; cursor:pointer; color:var(--ink-soft); padding:0 4px;
+  }
 </style>
 </head>
 <body>
@@ -379,6 +427,17 @@
 </div>
 
 <div id="toast"></div>
+
+<!-- シリーズ詳細パネル -->
+<div class="series-panel" id="seriesPanel">
+  <div class="series-panel-handle"></div>
+  <div class="series-panel-header">
+    <h2 id="seriesPanelTitle" class="serif"></h2>
+    <button class="series-close-btn" id="seriesPanelClose">×</button>
+  </div>
+  <div class="series-stats" id="seriesStats"></div>
+  <div class="series-vol-list" id="seriesVolList"></div>
+</div>
 
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
@@ -719,7 +778,7 @@ function renderCard(it) {
           <p class="card-title">${escapeHtml(it.title)}${it.volume ? `<span class="vol-badge">第${escapeHtml(it.volume)}巻</span>` : ''}</p>
         </div>
         <div class="meta-row">
-          ${it.seriesName ? `<span class="date-text">${escapeHtml(it.seriesName)}</span>` : ''}
+          ${it.seriesName ? `<span class="series-link" data-action="openSeries" data-series="${escapeHtml(it.seriesName)}">${escapeHtml(it.seriesName)}</span>` : ''}
           ${it.isSpinoff ? `<span class="badge badge-spinoff">スピンオフ${it.parentSeries ? '・' + escapeHtml(it.parentSeries) : ''}</span>` : ''}
           <span class="badge ${isUpcoming ? 'badge-upcoming' : 'badge-released'}">${isUpcoming ? '発売前' : '発売済'}</span>
           ${it.syncCalendar ? `<span class="badge badge-cal">カレンダー連携中</span>` : ''}
@@ -731,6 +790,7 @@ function renderCard(it) {
           <div class="purchase-toggle ${it.purchased ? 'checked' : ''}" data-action="togglePurchased" data-id="${it.id}">
             <span class="box">${it.purchased ? '✓' : ''}</span> 購入済み
           </div>
+          <a class="amazon-btn" href="${buildAmazonUrl(it)}" target="_blank" rel="noopener">Amazon</a>
           ${it.isSpinoff ? `<button class="icon-btn" data-action="hideSpinoff" data-id="${it.id}">このスピンオフを非表示</button>` : ''}
           <button class="icon-btn" data-action="edit" data-id="${it.id}">編集</button>
         </div>
@@ -772,6 +832,9 @@ document.getElementById('listContainer').addEventListener('click', async (e) => 
     await saveItemToDb(id, item);
   } else if (action === 'edit') {
     openPanel(id);
+  } else if (action === 'openSeries') {
+    const seriesName = target.dataset.series;
+    if (seriesName) openSeriesPanel(seriesName);
   }
 });
 
@@ -840,7 +903,10 @@ function isOn(elId) {
 
 document.getElementById('fabAdd').addEventListener('click', () => openPanel(null));
 document.getElementById('cancelBtn').addEventListener('click', closePanel);
-overlay.addEventListener('click', closePanel);
+overlay.addEventListener('click', () => {
+  closePanel();
+  closeSeriesPanel();
+});
 
 document.getElementById('spinoffFieldSwitch').addEventListener('click', e => {
   const on = !e.target.classList.contains('on');
@@ -918,7 +984,69 @@ document.getElementById('deleteBtn').addEventListener('click', async () => {
   closePanel();
 });
 
-/* ---------------- 全件カレンダー同期ボタン（ヘッダーに追加） ---------------- */
+/* ---------------- Amazon URL生成 ---------------- */
+function buildAmazonUrl(item) {
+  const q = encodeURIComponent((item.title || '') + (item.volume ? ' ' + item.volume + '巻' : ''));
+  return `https://www.amazon.co.jp/s?k=${q}`;
+}
+
+/* ---------------- シリーズ詳細パネル ---------------- */
+const seriesPanel = document.getElementById('seriesPanel');
+document.getElementById('seriesPanelClose').addEventListener('click', closeSeriesPanel);
+
+function openSeriesPanel(seriesName) {
+  const vols = Object.values(allItems)
+    .filter(it => (it.seriesName || '') === seriesName)
+    .sort((a,b) => {
+      const na = parseFloat(a.volume) || 0;
+      const nb = parseFloat(b.volume) || 0;
+      return na - nb || (a.releaseDate||'').localeCompare(b.releaseDate||'');
+    });
+
+  const total = vols.length;
+  const purchased = vols.filter(v => v.purchased).length;
+  const today = todayStr();
+  const upcoming = vols.filter(v => v.releaseDate >= today).length;
+
+  document.getElementById('seriesPanelTitle').textContent = seriesName;
+  document.getElementById('seriesStats').innerHTML = `
+    <div class="stat-chip">全 <strong>${total}</strong> 巻</div>
+    <div class="stat-chip">購入済 <strong>${purchased}</strong> 巻</div>
+    <div class="stat-chip">未購入 <strong>${total - purchased}</strong> 巻</div>
+    ${upcoming > 0 ? `<div class="stat-chip">発売前 <strong>${upcoming}</strong> 巻</div>` : ''}
+  `;
+
+  document.getElementById('seriesVolList').innerHTML = vols.map(v => {
+    const isUpcoming = v.releaseDate >= today;
+    return `
+      <div class="series-vol-row">
+        <div class="series-vol-info">
+          <div class="series-vol-title">${escapeHtml(v.title)}${v.volume ? `　第${escapeHtml(v.volume)}巻` : ''}</div>
+          <div class="series-vol-meta">
+            ${fmtDate(v.releaseDate)}　
+            <span class="badge ${isUpcoming ? 'badge-upcoming' : 'badge-released'}">${isUpcoming ? '発売前' : '発売済'}</span>
+          </div>
+        </div>
+        <div class="series-vol-actions">
+          <a class="amazon-btn" href="${buildAmazonUrl(v)}" target="_blank" rel="noopener">Amazon</a>
+          <div class="purchase-toggle ${v.purchased ? 'checked' : ''}" data-action="togglePurchased" data-id="${v.id}" style="font-size:11px;">
+            <span class="box">${v.purchased ? '✓' : ''}</span>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  document.getElementById('overlay').classList.add('open');
+  seriesPanel.classList.add('open');
+}
+
+function closeSeriesPanel() {
+  seriesPanel.classList.remove('open');
+  document.getElementById('overlay').classList.remove('open');
+}
+
+
 (function addSyncAllButton(){
   const header = document.querySelector('.header-row');
   const btn = document.createElement('button');
