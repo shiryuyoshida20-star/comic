@@ -1,9 +1,16 @@
+
 <!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>蔵書アラート — 発売日・購入管理</title>
+<meta name="theme-color" content="#233B5C">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="蔵書アラート">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='100' fill='%23233B5C'/%3E%3Crect x='140' y='100' width='160' height='220' rx='10' fill='%23FBF8F0'/%3E%3Crect x='150' y='115' width='80' height='8' rx='4' fill='%23D8CFBC'/%3E%3Crect x='150' y='133' width='120' height='6' rx='3' fill='%23D8CFBC'/%3E%3Crect x='150' y='149' width='100' height='6' rx='3' fill='%23D8CFBC'/%3E%3Crect x='140' y='330' width='230' height='80' rx='10' fill='%23A9824F' opacity='.7'/%3E%3Ccircle cx='340' cy='340' r='90' fill='%23B23A2E'/%3E%3Ctext x='340' y='360' text-anchor='middle' font-size='90' fill='white' font-family='serif'%3E新%3C/text%3E%3C/svg%3E">
+<link rel="manifest" href="data:application/manifest+json,%7B%22name%22%3A%22%E8%94%B5%E6%9B%B8%E3%82%A2%E3%83%A9%E3%83%BC%E3%83%88%22%2C%22short_name%22%3A%22%E8%94%B5%E6%9B%B8%22%2C%22start_url%22%3A%22.%2Fcomic-alert.html%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%23ECE6D6%22%2C%22theme_color%22%3A%22%23233B5C%22%7D">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@600;700&family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -261,8 +268,8 @@
   }
   .series-panel.open{transform:translateY(0);}
   .series-panel-handle{width:38px; height:4px; background:var(--line); border-radius:99px; margin:0 auto 14px;}
-  .series-panel-header{display:flex; align-items:baseline; justify-content:space-between; margin-bottom:14px; gap:10px;}
-  .series-panel-header h2{font-size:16px; margin:0;}
+  .series-panel-header{display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:14px; gap:10px;}
+  .series-panel-header h2{font-size:16px; margin:0 0 6px;}
   .series-stats{display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px;}
   .stat-chip{
     background:var(--paper-card); border:1px solid var(--line); border-radius:8px;
@@ -377,7 +384,7 @@
       <input type="text" id="f_volume" placeholder="例: 3">
     </div>
     <div class="field">
-      <label>発売日 <span style="color:var(--stamp)">*</span></label>
+      <label>発売日</label>
       <input type="date" id="f_date">
     </div>
   </div>
@@ -452,10 +459,13 @@
 <div class="series-panel" id="seriesPanel">
   <div class="series-panel-handle"></div>
   <div class="series-panel-header">
-    <h2 id="seriesPanelTitle" class="serif"></h2>
+    <div id="seriesCoverWrap" style="flex:none;width:64px;height:90px;border-radius:6px;background:var(--indigo-pale);background-size:cover;background-position:center;margin-right:12px;"></div>
+    <div style="flex:1;min-width:0;">
+      <h2 id="seriesPanelTitle" class="serif" style="margin:0 0 8px;"></h2>
+      <div class="series-stats" id="seriesStats"></div>
+    </div>
     <button class="series-close-btn" id="seriesPanelClose">×</button>
   </div>
-  <div class="series-stats" id="seriesStats"></div>
   <div style="margin-bottom:14px;">
     <button class="check-btn" id="checkNewVolBtn">📡 新刊をチェック（openBD）</button>
   </div>
@@ -792,28 +802,41 @@ function render() {
   container.innerHTML = html;
 }
 
+function getLatestCover(seriesName) {
+  const vols = Object.values(allItems)
+    .filter(it => (it.seriesName || '') === seriesName && it.coverUrl)
+    .sort((a, b) => {
+      const na = parseFloat(a.volume) || 0;
+      const nb = parseFloat(b.volume) || 0;
+      return nb - na;
+    });
+  return vols.length ? vols[0].coverUrl : '';
+}
+
 function renderCard(it) {
   if (it.isSpinoff && it.spinoffVisible === false) {
     return renderHiddenSpinoffRow(it);
   }
   const today = todayStr();
-  const isUpcoming = it.releaseDate >= today;
+  const isUpcoming = it.releaseDate ? it.releaseDate >= today : null;
+  const coverUrl = it.seriesName ? (getLatestCover(it.seriesName) || it.coverUrl || '') : (it.coverUrl || '');
+  const seriesAction = it.seriesName ? `data-action="openSeries" data-series="${escapeHtml(it.seriesName)}"` : '';
   return `
     <div class="card ${it.purchased ? 'purchased' : ''}" data-id="${it.id}">
       <div class="stamp-mark">購入済</div>
-      <div class="cover" style="${it.coverUrl ? `background-image:url('${it.coverUrl}')` : ''}">${it.coverUrl ? '' : '表紙\nなし'}</div>
+      <div class="cover" style="${coverUrl ? `background-image:url('${coverUrl}')` : ''};cursor:${it.seriesName ? 'pointer' : 'default'}" ${seriesAction}>${coverUrl ? '' : '表紙\nなし'}</div>
       <div class="card-body">
         <div class="card-top">
-          <p class="card-title">${escapeHtml(it.title)}${it.volume ? `<span class="vol-badge">第${escapeHtml(it.volume)}巻</span>` : ''}</p>
+          <p class="card-title" style="cursor:${it.seriesName ? 'pointer' : 'default'}" ${seriesAction}>${escapeHtml(it.title)}${it.volume ? `<span class="vol-badge">第${escapeHtml(it.volume)}巻</span>` : ''}</p>
         </div>
         <div class="meta-row">
           ${it.seriesName ? `<span class="series-link" data-action="openSeries" data-series="${escapeHtml(it.seriesName)}">${escapeHtml(it.seriesName)}</span>` : ''}
           ${it.isSpinoff ? `<span class="badge badge-spinoff">スピンオフ${it.parentSeries ? '・' + escapeHtml(it.parentSeries) : ''}</span>` : ''}
-          <span class="badge ${isUpcoming ? 'badge-upcoming' : 'badge-released'}">${isUpcoming ? '発売前' : '発売済'}</span>
+          ${isUpcoming === null ? `<span class="badge" style="background:#ede8e0;color:var(--ink-soft)">発売日未定</span>` : `<span class="badge ${isUpcoming ? 'badge-upcoming' : 'badge-released'}">${isUpcoming ? '発売前' : '発売済'}</span>`}
           ${it.syncCalendar ? `<span class="badge badge-cal">カレンダー連携中</span>` : ''}
         </div>
         <div class="meta-row">
-          <span class="date-text">発売日: ${fmtDate(it.releaseDate)}</span>
+          ${it.releaseDate ? `<span class="date-text">発売日: ${fmtDate(it.releaseDate)}</span>` : ''}
         </div>
         <div class="card-actions">
           <div class="purchase-toggle ${it.purchased ? 'checked' : ''}" data-action="togglePurchased" data-id="${it.id}">
@@ -968,8 +991,8 @@ document.getElementById('lookupBtn').addEventListener('click', async () => {
 document.getElementById('saveBtn').addEventListener('click', async () => {
   const title = document.getElementById('f_title').value.trim();
   const releaseDate = document.getElementById('f_date').value;
-  if (!title || !releaseDate) {
-    toast("タイトルと発売日は必須です");
+  if (!title) {
+    toast("タイトルは必須です");
     return;
   }
   const id = editingId || newItemId();
@@ -1183,6 +1206,17 @@ function openSeriesPanel(seriesName) {
   document.getElementById('seriesPanelTitle').textContent = seriesName;
   document.getElementById('checkResultSection').classList.add('hidden');
   document.getElementById('checkResultList').innerHTML = '';
+
+  // 最新刊の表紙をヘッダーに表示
+  const coverUrl = getLatestCover(seriesName);
+  const coverWrap = document.getElementById('seriesCoverWrap');
+  if (coverUrl) {
+    coverWrap.style.backgroundImage = `url('${coverUrl}')`;
+    coverWrap.style.display = 'block';
+  } else {
+    coverWrap.style.backgroundImage = '';
+    coverWrap.style.display = 'none';
+  }
   document.getElementById('seriesStats').innerHTML = `
     <div class="stat-chip">全 <strong>${total}</strong> 巻</div>
     <div class="stat-chip">購入済 <strong>${purchased}</strong> 巻</div>
