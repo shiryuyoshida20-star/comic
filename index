@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="refresh" content="0;url=./comic-alert.html">
+<title>蔵書アラート</title>
+</head>
+<body>
+<script>location.replace('./comic-alert.html');</script>
+</body>
+</html>
