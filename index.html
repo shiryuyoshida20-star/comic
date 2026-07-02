@@ -333,6 +333,7 @@
       <p class="app-sub">発売日・購入・カレンダー連携の管理台帳</p>
     </div>
     <div class="auth-area" id="authArea"></div>
+    <button class="btn btn-ghost" id="settingsBtn" title="設定" style="font-size:16px;padding:6px 10px;">⚙</button>
   </div>
 </header>
 
@@ -481,6 +482,23 @@
 </div>
 
 <div id="toast"></div>
+
+<!-- 設定パネル -->
+<div class="panel" id="settingsPanel" style="z-index:65;">
+  <div class="panel-handle"></div>
+  <h2>設定</h2>
+  <div class="field">
+    <label>楽天ブックス アプリID（タイトル検索に使用）</label>
+    <input type="text" id="rakutenAppId" placeholder="例: 1234567890123456789">
+    <div style="font-size:11px;color:var(--ink-soft);margin-top:4px;">
+      <a href="https://webservice.rakuten.co.jp/" target="_blank" rel="noopener" style="color:var(--indigo);">webservice.rakuten.co.jp</a> で無料取得できます（楽天アカウントでログイン→「アプリID発行」→アプリ名・URLを入力→発行されたIDをここに貼る）。設定するとタイトル検索で楽天ブックスから漫画の表紙・発売日を自動取得できます。
+    </div>
+  </div>
+  <div class="panel-footer">
+    <button class="btn-secondary" id="settingsCancelBtn">閉じる</button>
+    <button class="btn-primary" id="settingsSaveBtn">保存</button>
+  </div>
+</div>
 
 <!-- シリーズ詳細パネル -->
 <div class="series-panel" id="seriesPanel">
@@ -1130,9 +1148,10 @@ document.getElementById('cancelBtn').addEventListener('click', closePanel);
 let _panelOpenTime = 0;
 
 overlay.addEventListener('click', (e) => {
-  if (Date.now() - _panelOpenTime < 400) return; // ゴーストクリック防止
+  if (Date.now() - _panelOpenTime < 400) return;
   closePanel();
   closeSeriesPanel();
+  settingsPanel.classList.remove('open');
 });
 
 document.getElementById('spinoffFieldSwitch').addEventListener('click', e => {
@@ -1171,6 +1190,22 @@ document.getElementById('titleSearchBtn').addEventListener('click', async () => 
   }
 
   try {
+    // 検索0: 楽天ブックス（APIキー設定時）
+    const rakutenAppId = localStorage.getItem('rakutenAppId');
+    if (rakutenAppId) {
+      resultsEl.innerHTML = `<p style="font-size:12px;color:var(--ink-soft)">楽天ブックスで検索中…</p>`;
+      try {
+        const rakutenResults = await searchRakutenBooks(query);
+        if (rakutenResults && rakutenResults.length) {
+          window._titleSearchData = rakutenResults;
+          window._titleSearchSource = 'rakuten';
+          resultsEl.innerHTML = '';
+          renderRakutenResults(rakutenResults, resultsEl);
+          return;
+        }
+      } catch(e) { console.warn('Rakuten:', e); }
+    }
+
     // 検索1: Google Books（日本語）
     let items = [];
     try {
@@ -1235,6 +1270,42 @@ document.getElementById('titleSearchBtn').addEventListener('click', async () => 
     btn.disabled = false;
   }
 });
+
+function renderRakutenResults(items, resultsEl) {
+  resultsEl.innerHTML = `<p style="font-size:11px;color:var(--ink-soft);margin:0 0 6px;">楽天ブックスの検索結果</p>` + items.map((it, i) => `
+    <div class="title-search-result" onclick="applyRakutenResult(${i})">
+      <div class="title-search-cover" style="${it.cover ? `background-image:url('${it.cover}')` : ''}"></div>
+      <div class="title-search-info">
+        <div class="title-search-name">${escapeHtml(it.title)}</div>
+        <div class="title-search-meta">${escapeHtml(it.author)}　${escapeHtml(it.publisher)}　${it.date}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+window.applyRakutenResult = function(index) {
+  const it = window._titleSearchData && window._titleSearchData[index];
+  if (!it) return;
+  document.getElementById('f_title').value = it.title;
+  document.getElementById('f_author').value = it.author;
+  document.getElementById('f_publisher').value = it.publisher;
+  if (it.isbn) document.getElementById('f_isbn').value = it.isbn;
+  if (it.cover) {
+    document.getElementById('f_isbn').dataset.cover = it.cover;
+    document.getElementById('f_cover_url').value = it.cover;
+  }
+  if (it.date) {
+    const d = parsePubdate(it.date.replace(/[年月日\/\-]/g, c => /[年\/\-]/.test(c) ? '' : c === '月' ? '' : ''));
+    if (d) document.getElementById('f_date').value = d;
+  }
+  const vol = extractVolume(it.title);
+  if (vol) document.getElementById('f_volume').value = String(vol);
+  const seriesName = it.title.replace(/\s*第?\d+巻.*$/, '').replace(/\s*\(\d+\).*$/, '').replace(/\s*（\d+）.*$/, '').trim();
+  document.getElementById('f_series').value = seriesName || it.title;
+  document.getElementById('titleSearchResults').innerHTML = '';
+  document.getElementById('f_title_search').value = '';
+  toast("情報を入力しました。内容を確認して保存してください。");
+};
 
 function renderTitleSearchResults(items, resultsEl) {
   resultsEl.innerHTML = items.map((item, i) => {
@@ -1393,7 +1464,45 @@ document.getElementById('deleteBtn').addEventListener('click', async () => {
   closePanel();
 });
 
-/* ---------------- Amazon URL生成 ---------------- */
+/* ---------------- 設定パネル（楽天APIキー） ---------------- */
+const settingsPanel = document.getElementById('settingsPanel');
+document.getElementById('settingsBtn').addEventListener('click', () => {
+  document.getElementById('rakutenAppId').value = localStorage.getItem('rakutenAppId') || '';
+  _panelOpenTime = Date.now();
+  overlay.classList.add('open');
+  settingsPanel.classList.add('open');
+});
+document.getElementById('settingsCancelBtn').addEventListener('click', () => {
+  settingsPanel.classList.remove('open');
+  overlay.classList.remove('open');
+});
+document.getElementById('settingsSaveBtn').addEventListener('click', () => {
+  const id = document.getElementById('rakutenAppId').value.trim();
+  if (id) localStorage.setItem('rakutenAppId', id);
+  else localStorage.removeItem('rakutenAppId');
+  settingsPanel.classList.remove('open');
+  overlay.classList.remove('open');
+  toast('設定を保存しました');
+});
+
+/* ---------------- 楽天ブックス検索 ---------------- */
+async function searchRakutenBooks(query) {
+  const appId = localStorage.getItem('rakutenAppId');
+  if (!appId) return null;
+  const url = `https://app.rakuten.co.jp/services/api/BooksBook/Search/20170404?applicationId=${encodeURIComponent(appId)}&title=${encodeURIComponent(query)}&booksGenreId=001004&hits=20&format=json`;
+  const res = await fetch(url);
+  if (!res.ok) return null;
+  const data = await res.json();
+  if (data.error) return null;
+  return (data.Items || []).map(item => ({
+    title: item.title || '',
+    author: item.author || '',
+    publisher: item.publisherName || '',
+    date: (item.salesDate || '').replace(/年|月|日/g, match => match === '年' ? '-' : match === '月' ? '-' : '').replace(/-$/, ''),
+    isbn: item.isbn || '',
+    cover: item.largeImageUrl || item.mediumImageUrl || ''
+  }));
+}
 function buildAmazonUrl(item) {
   const q = encodeURIComponent((item.title || '') + (item.volume ? ' ' + item.volume + '巻' : ''));
   return `https://www.amazon.co.jp/s?k=${q}`;
